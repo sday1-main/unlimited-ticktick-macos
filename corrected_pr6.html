@@ -1,0 +1,776 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Практическая работа 6 — исправленный файл</title><style>body{font:16px/1.55 system-ui,sans-serif;max-width:1050px;margin:32px auto;padding:0 20px;color:#202124}.markdown{margin:18px 0;padding:16px 20px;background:#fff;border:1px solid #e2e5e9;border-radius:8px}.code{margin:12px 0 20px;background:#f6f8fa;border-radius:8px;padding:14px 18px;overflow:auto}pre{margin:0;white-space:pre-wrap;font:14px/1.5 ui-monospace,monospace}h1{font-size:1.7rem}</style></head><body><h1>Практическая работа 6 — исправленный файл</h1><section class="markdown">Практическая работа 6. Подготовка набора данных¶<br>
+Это первый отчётный ноутбук курса. Он закрывает практики 1–5. Второй отчёт (практика 16) будет по практикам 7–15.<br>
+<br>
+Предметная задача. IT-компания ведёт журнал обращений в службу поддержки (service desk): сбои продуктов, нагрузка на серверы, эскалации. По этим данным позже можно учить модель, которая заранее замечает нарушение SLA (sla_breached: 1 — срок ответа сорван, 0 — уложились). В этой работе модель не строится. Нужно осмотреть, посчитать, нарисовать и привести таблицу в порядок — как на практиках 1–5.<br>
+<br>
+Официальная формулировка занятия: загрузка → разведочный анализ и визуализация → предобработка → конструирование признаков. У нас те же шаги разложены на пять блоков, по одной пройденной практике.<br>
+<br>
+<br>
+Что входит в работу (15 баллов)¶<br>
+<br>
+<br>
+<br>
+Блок<br>
+Практика<br>
+Что сдаёте<br>
+Баллы<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+1<br>
+Основы pandas<br>
+код осмотра, выборки и нового столбца + вопросы<br>
+3<br>
+<br>
+<br>
+<br>
+2<br>
+NumPy<br>
+код на массивах (срез, маска, broadcasting) + вопросы<br>
+3<br>
+<br>
+<br>
+<br>
+3<br>
+Группировка<br>
+groupby, pivot_table, дата из Unix + вопросы<br>
+3<br>
+<br>
+<br>
+<br>
+4<br>
+Визуализация<br>
+не меньше 4 графиков разных типов и выводы<br>
+3<br>
+<br>
+<br>
+<br>
+5<br>
+Подготовка данных<br>
+пропуски, текст, кодирование, масштаб, новые признаки + вопросы<br>
+3<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+Итого<br>
+15<br>
+<br>
+<br>
+<br>
+<br>
+Код без запуска и пустые ответы на вопросы не засчитываются. Числа и графики у каждого свои: датасет строится из вашего ФИО и номера в списке.<br>
+<br>
+<br>
+Важно: у каждого студента свой набор данных¶<br>
+Данные не скачиваются с Kaggle. Они генерируются из персонального SEED. Заполните ячейку с фамилией, прежде чем запускать остальные.</section><section class="markdown">Шаг 0. Персонализация (обязательно)¶<br>
+Впишите фамилию, имя и номер по списку группы. Из них считается SEED — зерно генератора, которое задаёт ваш вариант.</section><section class="code"><pre><code># ==========================================================
+# ⬇️  ЗАПОЛНИТЕ ЭТИ ТРИ ПОЛЯ СВОИМИ ДАННЫМИ
+# ==========================================================
+last_name   = &quot;Шевченко&quot;    # &lt;-- впишите свою фамилию
+first_name  = &quot;Артем&quot;      # &lt;-- впишите своё имя
+list_number = 24           # &lt;-- ваш номер по списку (целое число)
+# ==========================================================
+
+import hashlib
+
+def make_seed(last: str, first: str, number: int) -&gt; int:
+    # ФИО + номер -&gt; стабильный seed 0..99999
+    key = f&quot;{last.strip().lower()}|{first.strip().lower()}|{int(number)}&quot;
+    return int(hashlib.sha256(key.encode(&quot;utf-8&quot;)).hexdigest(), 16) % 100_000
+
+SEED = make_seed(last_name, first_name, list_number)
+
+print(&quot;Студент:&quot;, last_name, first_name, f&quot;(№{list_number})&quot;)
+print(&quot;Ваш персональный SEED:&quot;, SEED)
+print(&quot;Запишите SEED в итоговый отчёт — он подтверждает вариант.&quot;)
+</code></pre></section><section class="markdown">Как это работает. hashlib.sha256 переводит строку с ФИО и номером в большое число, затем берётся остаток от деления на 100 000. Одинаковые ФИО и номер всегда дают один и тот же SEED, разные — почти всегда разный. Весь датасет ниже зависит только от этого числа.</section><section class="markdown">Подготовка окружения¶<br>
+В Google Colab пакеты уже есть. Локально при необходимости: pip install pandas numpy matplotlib seaborn.</section><section class="code"><pre><code>%matplotlib inline
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+pd.set_option(&quot;display.max_columns&quot;, 50)
+sns.set_theme(style=&quot;whitegrid&quot;)
+plt.rcParams[&quot;figure.figsize&quot;] = (8, 4)
+</code></pre></section><section class="markdown">Генерация вашего набора данных¶<br>
+Ячейка ниже создаёт ваш журнал обращений IT-службы. Разбирать генератор не нужно — достаточно запустить.<br>
+<br>
+Внутри специально заложены пропуски, выбросы, дубликаты и разный регистр текста, иначе предобработка была бы формальной.<br>
+<br>
+Признаки<br>
+<br>
+<br>
+<br>
+<br>
+Столбец<br>
+Смысл<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+ticket_id<br>
+идентификатор обращения<br>
+<br>
+<br>
+<br>
+opened_ts<br>
+время открытия в Unix-секундах<br>
+<br>
+<br>
+<br>
+department<br>
+отдел: Support, Backend, DevOps, Security, Data<br>
+<br>
+<br>
+<br>
+product<br>
+продукт: Cloud, CRM, Billing, Auth, Analytics<br>
+<br>
+<br>
+<br>
+priority<br>
+приоритет: Low, Medium, High, Critical<br>
+<br>
+<br>
+<br>
+channel<br>
+канал: Email, Slack, Portal, Phone<br>
+<br>
+<br>
+<br>
+assignee_level<br>
+уровень исполнителя: Junior, Middle, Senior<br>
+<br>
+<br>
+<br>
+client_tier<br>
+тариф клиента: Free, Pro, Enterprise<br>
+<br>
+<br>
+<br>
+cpu_pct<br>
+загрузка CPU на затронутом узле, %<br>
+<br>
+<br>
+<br>
+memory_mb<br>
+занятая память, МБ<br>
+<br>
+<br>
+<br>
+n_reopens<br>
+сколько раз тикет открывали повторно<br>
+<br>
+<br>
+<br>
+comments<br>
+число комментариев в тикете<br>
+<br>
+<br>
+<br>
+resolve_hours<br>
+часы до закрытия<br>
+<br>
+<br>
+<br>
+sla_breached<br>
+цель: 1 — SLA нарушен, 0 — нет</section><section class="code"><pre><code>#@title Создание персонального датасета (нажмите ▶️) { display-mode: &quot;form&quot; }
+
+def load_it_tickets(seed: int, n: int = 1800) -&gt; &quot;pd.DataFrame&quot;:
+    &quot;&quot;&quot;Индивидуальный «грязный» журнал IT-обращений по seed.&quot;&quot;&quot;
+    rng = np.random.default_rng(seed)
+
+    opened_ts = rng.integers(1_735_689_600, 1_751_241_600, size=n)
+    department = rng.choice(
+        [&quot;Support&quot;, &quot;Backend&quot;, &quot;DevOps&quot;, &quot;Security&quot;, &quot;Data&quot;],
+        size=n, p=[0.32, 0.22, 0.18, 0.14, 0.14],
+    )
+    product = rng.choice(
+        [&quot;Cloud&quot;, &quot;CRM&quot;, &quot;Billing&quot;, &quot;Auth&quot;, &quot;Analytics&quot;], size=n
+    )
+    priority = rng.choice(
+        [&quot;Low&quot;, &quot;Medium&quot;, &quot;High&quot;, &quot;Critical&quot;], size=n, p=[0.40, 0.30, 0.20, 0.10]
+    )
+    channel = rng.choice([&quot;Email&quot;, &quot;Slack&quot;, &quot;Portal&quot;, &quot;Phone&quot;], size=n)
+    assignee = rng.choice([&quot;Junior&quot;, &quot;Middle&quot;, &quot;Senior&quot;], size=n, p=[0.35, 0.45, 0.20])
+    tier = rng.choice([&quot;Free&quot;, &quot;Pro&quot;, &quot;Enterprise&quot;], size=n, p=[0.45, 0.40, 0.15])
+    cpu_pct = np.clip(np.round(rng.normal(48, 18, size=n), 1), 1, 99)
+    memory_mb = np.clip(np.round(rng.normal(2200, 850, size=n), 0), 256, None)
+    n_reopens = rng.poisson(0.7, size=n)
+    comments = rng.poisson(4.0, size=n) + 1
+    resolve_hours = np.clip(np.round(rng.lognormal(1.55, 0.75, size=n), 2), 0.2, 240)
+
+    logit = (
+        -1.4
+        + 1.4 * (priority == &quot;Critical&quot;)
+        + 0.7 * (priority == &quot;High&quot;)
+        - 0.4 * (priority == &quot;Low&quot;)
+        + 0.035 * resolve_hours
+        + 0.018 * cpu_pct
+        + 0.55 * (department == &quot;Security&quot;)
+        + 0.35 * (n_reopens &gt;= 2)
+        - 0.45 * (assignee == &quot;Senior&quot;)
+        - 0.30 * (tier == &quot;Enterprise&quot;)
+    )
+    sla = (rng.uniform(size=n) &lt; 1 / (1 + np.exp(-logit))).astype(int)
+
+    df = pd.DataFrame({
+        &quot;ticket_id&quot;: np.arange(10_000, 10_000 + n),
+        &quot;opened_ts&quot;: opened_ts,
+        &quot;department&quot;: department,
+        &quot;product&quot;: product,
+        &quot;priority&quot;: priority,
+        &quot;channel&quot;: channel,
+        &quot;assignee_level&quot;: assignee,
+        &quot;client_tier&quot;: tier,
+        &quot;cpu_pct&quot;: cpu_pct,
+        &quot;memory_mb&quot;: memory_mb,
+        &quot;n_reopens&quot;: n_reopens,
+        &quot;comments&quot;: comments,
+        &quot;resolve_hours&quot;: resolve_hours,
+        &quot;sla_breached&quot;: sla,
+    })
+
+    df.loc[rng.choice(n, int(0.06 * n), replace=False), &quot;resolve_hours&quot;] = np.nan
+    df.loc[rng.choice(n, int(0.04 * n), replace=False), &quot;cpu_pct&quot;] = np.nan
+    df.loc[rng.choice(n, int(0.03 * n), replace=False), &quot;comments&quot;] = np.nan
+    df.loc[rng.choice(n, 10, replace=False), &quot;resolve_hours&quot;] *= 9
+    df.loc[rng.choice(n, 8, replace=False), &quot;memory_mb&quot;] *= 7
+    ridx = rng.choice(n, int(0.12 * n), replace=False)
+    df.loc[ridx, &quot;department&quot;] = df.loc[ridx, &quot;department&quot;].str.upper()
+    pidx = rng.choice(n, int(0.08 * n), replace=False)
+    df.loc[pidx, &quot;product&quot;] = &quot;  &quot; + df.loc[pidx, &quot;product&quot;].str.lower() + &quot; &quot;
+    df = pd.concat([df, df.sample(int(0.025 * n), random_state=seed)], ignore_index=True)
+    return df.sample(frac=1, random_state=seed).reset_index(drop=True)
+
+print(&quot;Функция load_it_tickets готова.&quot;)
+</code></pre></section><section class="markdown">Загрузите ваш набор одной строкой:</section><section class="code"><pre><code>df_raw = load_it_tickets(SEED)
+
+print(&quot;Ваш датасет создан. Размер:&quot;, df_raw.shape)
+print(&quot;Доля нарушений SLA:&quot;, f&quot;{df_raw[&#x27;sla_breached&#x27;].mean():.1%}&quot;)
+</code></pre></section><section class="markdown">В таблице уже спрятаны пропуски, выбросы, дубликаты и неаккуратный текст. Найти и поправить их — часть заданий. Дальше везде работайте со своим df_raw, если в блоке не сказано иное.</section><section class="markdown">Этап 1. Основы pandas (практика 1)¶<br>
+Цель. Убедиться, что таблица загрузилась, понять размер и типы, выбрать строки и столбцы, добавить признак, сохранить фрагмент.<br>
+<br>
+Пример¶<br>
+Стандартный осмотр и простая выборка. Запустите ячейки — те же команды понадобятся в задании.</section><section class="code"><pre><code>print(&quot;Размер (строки, столбцы):&quot;, df_raw.shape)
+print(&quot;Имена столбцов:&quot;, list(df_raw.columns))
+print(&quot;\nПервые 5 строк:&quot;)
+display(df_raw.head())
+print(&quot;\nТипы и непропуски:&quot;)
+df_raw.info()
+</code></pre></section><section class="code"><pre><code># loc — по подписям, iloc — по номерам
+print(&quot;Один столбец (первые значения priority):&quot;)
+print(df_raw[&quot;priority&quot;].head())
+print(&quot;\nДве строки и три столбца через loc:&quot;)
+display(df_raw.loc[0:1, [&quot;ticket_id&quot;, &quot;department&quot;, &quot;priority&quot;]])
+print(&quot;Критические тикеты:&quot;, (df_raw[&quot;priority&quot;] == &quot;Critical&quot;).sum())
+</code></pre></section><section class="markdown">Задание 1¶<br>
+В ячейках ниже, на своих данных:<br>
+<br>
+<br>
+Выведите последние 8 строк (.tail(8)).<br>
+<br>
+Посчитайте число полных дубликатов (.duplicated().sum()).<br>
+<br>
+Через .loc отберите тикеты с priority равным &quot;High&quot; или &quot;Critical&quot; и столбцы ticket_id, department, priority, resolve_hours. Сколько таких строк?<br>
+<br>
+Добавьте столбец is_slow: True, если resolve_hours больше 24 (пропуски пусть останутся пропусками). Затем переименуйте n_reopens в reopen_count.<br>
+<br>
+Сохраните первые 100 строк текущего df_raw в файл it_tickets_head.csv.</section><section class="code"><pre><code># ▼▼▼ ВАШ КОД (Задание 1) ▼▼▼
+
+# 1. Последние 8 строк
+df_raw.tail(8)
+</code></pre></section><section class="code"><pre><code># 2. Число дубликатов
+df_raw.duplicated().sum()
+</code></pre></section><section class="code"><pre><code># 3. High или Critical, выбранные столбцы
+HighCrit = df_raw[(df_raw[&quot;priority&quot;] == &quot;High&quot;) | (df_raw[&quot;priority&quot;] == &quot;Critical&quot;)]
+inf = df_raw.loc[HighCrit.index, [&quot;ticket_id&quot;, &quot;department&quot;, &quot;priority&quot;, &quot;resolve_hours&quot;]]
+print(len(inf))
+</code></pre></section><section class="code"><pre><code># 4. Столбец is_slow и переименование n_reopens → reopen_count
+df_raw[&quot;is_slow&quot;] = (df_raw[&quot;resolve_hours&quot;] &gt; 24).astype(&quot;bool&quot;)
+df_raw.rename(columns={&quot;n_reopens&quot;: &quot;reopen_count&quot;}, inplace=True)
+</code></pre></section><section class="code"><pre><code># 5. Сохранение it_tickets_head.csv
+df_raw.head(100).to_csv(&quot;it_tickets_head.csv&quot;, index=False)
+# ▲▲▲ КОНЕЦ ВАШЕГО КОДА ▲▲▲
+</code></pre></section><section class="markdown">Контрольные вопросы к этапу 1 (ответьте текстом):<br>
+<br>
+<br>
+Чем .info() отличается от .describe()? Что показывает каждый?<br>
+<br>
+Когда удобнее .loc, а когда .iloc?<br>
+<br>
+Почему дубликаты строк могут испортить и статистику, и будущую модель?</section><section class="markdown">Ответы (двойной клик):<br>
+<br>
+1.info дает информацию по самому датафрейму например кол-во непустых столбцов, его размер или же тип даных, в свою очередб discribe дает информацию по конкретной выборке данных а не всему датасету в общем, а также считает статистики только по числовым столбцам для булевых среднее будет равно доле true<br>
+<br>
+2.когда нужно сделать по индексу выборку то используем iloc когда по названию берем loc<br>
+<br>
+3.Они могут изменить вычеслительные данные например среднее значение ,а также ухудшает обучение модели на этом дата сете так как это будет просто заучивание и конкретно на эти данные он будет определенно отвечать</section><section class="markdown">Этап 2. NumPy¶<br>
+Цель. Перевести столбец в массив, посчитать агрегаты без цикла for, срезать, отфильтровать маской, сделать поэлементную операцию (broadcasting).<br>
+<br>
+Таблица удобна, когда у столбцов есть имена. Массив удобен, когда нужно быстро посчитать «все значения сразу».</section><section class="markdown">Пример¶</section><section class="code"><pre><code>cpu = df_raw[&quot;cpu_pct&quot;].to_numpy(dtype=float)
+print(&quot;Тип:&quot;, type(cpu), &quot;форма:&quot;, cpu.shape, &quot;dtype:&quot;, cpu.dtype)
+print(&quot;Первые 8 значений:&quot;, cpu[:8])
+print(&quot;Среднее без учёта NaN:&quot;, np.nanmean(cpu))
+print(&quot;Максимум:&quot;, np.nanmax(cpu))
+
+# маска: загрузка выше 80% (NaN даст False)
+high_cpu = cpu &gt; 80
+print(&quot;Доля наблюдений с CPU &gt; 80%:&quot;, np.nanmean(high_cpu))
+
+# broadcasting: перевод % в долю 0..1
+cpu_share = cpu / 100
+print(&quot;Доля CPU, первые 5:&quot;, cpu_share[:5])
+</code></pre></section><section class="markdown">Задание 2¶<br>
+Работайте с массивами, не с циклами for по строкам.<br>
+<br>
+<br>
+Соберите массивы hours из resolve_hours и mem из memory_mb (тип float).<br>
+<br>
+Посчитайте медиану и стандартное отклонение hours, игнорируя NaN.<br>
+<br>
+Срезом возьмите последние 15 значений mem.<br>
+<br>
+Постройте маску «память выше 4000 МБ» и выведите, сколько таких тикетов (для NaN считайте «не выше»).<br>
+<br>
+Сделайте z-оценку памяти через broadcasting: (mem - mean) / std, где mean и std без NaN. Выведите 5 первых z-оценок.</section><section class="code"><pre><code># ▼▼▼ ВАШ КОД (Задание 2) ▼▼▼
+
+# 1. Массивы hours и mem
+hours = df_raw[&quot;resolve_hours&quot;].to_numpy(dtype=float)
+mem = df_raw[&quot;memory_mb&quot;].to_numpy(dtype=float)
+</code></pre></section><section class="code"><pre><code># 2. Медиана и std для hours
+print(&quot;Медиана:&quot;, np.nanmedian(hours))
+print(&quot;Std:&quot;, np.nanstd(hours))
+</code></pre></section><section class="code"><pre><code># 3. Срез последних 15 значений mem
+print(mem[-15:])
+</code></pre></section><section class="code"><pre><code># 4. Маска памяти &gt; 4000 МБ
+high_mem = mem &gt; 4000
+print(int(high_mem.sum()))
+print((high_mem.mean() * 100).round(2),&quot;%&quot;)
+</code></pre></section><section class="code"><pre><code># 5. Z-оценка памяти через broadcasting: (массив − скаляр) / скаляр
+mean = np.nanmean(mem)
+std  = np.nanstd(mem)
+mem_z = (mem - mean) / std
+print(np.round(mem_z[:5], 3))
+# ▲▲▲ КОНЕЦ ВАШЕГО КОДА ▲▲▲
+</code></pre></section><section class="markdown">Контрольные вопросы к этапу 2:<br>
+<br>
+<br>
+Чем массив NumPy принципиально отличается от списка Python?<br>
+<br>
+Что такое broadcasting? Приведите пример из этого задания.<br>
+<br>
+Почему для среднего по столбцу с пропусками нужен np.nanmean, а не np.mean?</section><section class="markdown">Ответы:<br>
+<br>
+<br>
+<br>
+не может содержать разные типы данных, все данные лежат в едином блоке данных из-за чего процессору не нужно скакать по памяти и пропадают промахи кэша и не хранит ссылки на объекты<br>
+<br>
+<br>
+<br>
+broadcasting позволяет работать с массивами без цикла for например оценка z мы работаем с просто числами и массивом проводя одну и ту же операцию для каждого элемента маччива без цикла for<br>
+<br>
+<br>
+<br>
+так как любое действие по типу сложения среднее и т.д. делает итог этого выражение с пропуском таким же пропуском</section><section class="markdown">Этап 3. Агрегирование и группировка (практика 3)¶<br>
+Цель. Ответить на вопросы вида «какая доля нарушений SLA в каждом отделе?» без ручного фильтра. Схема одна: разбить → посчитать → собрать.<br>
+<br>
+Unix-время opened_ts нужно превратить в обычную дату, иначе группировка по дням невозможна.</section><section class="markdown">Пример¶</section><section class="code"><pre><code>print(&quot;Среднее время решения по приоритету:&quot;)
+display(
+    df_raw.groupby(&quot;priority&quot;)[&quot;resolve_hours&quot;].agg([&quot;count&quot;, &quot;mean&quot;, &quot;median&quot;]).round(2)
+)
+
+print(&quot;\nСводная: доля нарушений SLA по отделу и уровню исполнителя&quot;)
+pivot = pd.pivot_table(
+    df_raw, values=&quot;sla_breached&quot;, index=&quot;department&quot;,
+    columns=&quot;assignee_level&quot;, aggfunc=&quot;mean&quot;,
+)
+display(pivot.round(3))
+</code></pre></section><section class="code"><pre><code>df_time = df_raw.copy()
+df_time[&quot;opened_at&quot;] = pd.to_datetime(df_time[&quot;opened_ts&quot;], unit=&quot;s&quot;)
+print(&quot;Минимум и максимум даты:&quot;, df_time[&quot;opened_at&quot;].min(), df_time[&quot;opened_at&quot;].max())
+print(&quot;Тикетов по месяцам:&quot;)
+print(df_time.groupby(df_time[&quot;opened_at&quot;].dt.to_period(&quot;M&quot;)).size())
+</code></pre></section><section class="markdown">Задание 3 (2 балла за код + 1 балл за вопросы)¶<br>
+<br>
+Сделайте groupby по product: для каждого продукта — число тикетов, среднее cpu_pct, доля sla_breached. Отсортируйте по доле нарушений по убыванию.<br>
+<br>
+Постройте pivot_table: строки — channel, столбцы — priority, значения — среднее resolve_hours.<br>
+<br>
+Переведите opened_ts в datetime. Добавьте столбец opened_date (только дата). Посчитайте число тикетов по дням и выведите 5 дней с наибольшим числом обращений.<br>
+<br>
+Дополнительно: groupby по client_tier с .agg сразу по нескольким столбцам — среднее resolve_hours и сумма sla_breached.</section><section class="code"><pre><code># ▼▼▼ ВАШ КОД (Задание 3) ▼▼▼
+
+# 1. groupby по product
+summary = df_raw.groupby(&quot;product&quot;).agg(
+    tickets_count=(&quot;sla_breached&quot;, &quot;count&quot;),
+    avg_cpu=(&quot;cpu_pct&quot;, &quot;mean&quot;),
+    sla_breach_share=(&quot;sla_breached&quot;, &quot;mean&quot;)
+).sort_values(by=&quot;sla_breach_share&quot;, ascending=False).round(3)
+display(summary)
+</code></pre></section><section class="code"><pre><code># 2. pivot_table channel × priority
+df_raw.pivot_table(index=&quot;channel&quot;,columns=&quot;priority&quot;,values=&quot;resolve_hours&quot;,aggfunc=&quot;mean&quot;).round(3)
+</code></pre></section><section class="code"><pre><code># 3. Unix → datetime
+df_raw[&quot;opened_ts&quot;] = pd.to_datetime(df_raw[&quot;opened_ts&quot;], unit=&quot;s&quot;)
+df_raw[&quot;opened_date&quot;] = df_raw[&quot;opened_ts&quot;].dt.date
+print(df_raw[&quot;opened_date&quot;].value_counts().head(5))
+</code></pre></section><section class="code"><pre><code># 4. Несколько агрегатов по client_tier
+summary1 = df_raw.groupby(&quot;client_tier&quot;).agg(
+    sum_sla=(&quot;sla_breached&quot;, &quot;sum&quot;),
+    avg_hours=(&quot;resolve_hours&quot;, &quot;mean&quot;)
+).round(2)
+display(summary1)
+# ▲▲▲ КОНЕЦ ВАШЕГО КОДА ▲▲▲
+</code></pre></section><section class="markdown">Контрольные вопросы к этапу 3:<br>
+<br>
+<br>
+Чем groupby отличается от pivot_table? Когда что удобнее?<br>
+<br>
+Что делает agg со словарём нескольких функций?<br>
+<br>
+Почему Unix-секунды нельзя сразу группировать «по месяцу», не переводя в datetime?</section><section class="markdown">Ответы:<br>
+<br>
+Ответы:<br>
+<br>
+<br>
+<br>
+Groupby делает длинную таблицу (все данные идут вниз в столбик), а pivot_table делает двумерную сетку. Groupby удобнее для кода, дальнейшей обработки и графиков. Pivot_table удобнее для финальных отчетов, когда нужно посмотреть данные.<br>
+<br>
+<br>
+<br>
+Применяет разные функции к разным столбцам за один шаг например считает mean для одного столбца и sum для другого, чтобы не делать лишних вычислений.<br>
+<br>
+<br>
+<br>
+Потому что Unix-секунды это просто одно число. Месяцы имеют разное количество дней и секунд еще есть високосные года, поэтому перевести секунды в месяц простым делением невозможно.</section><section class="markdown">Этап 4. Визуализация (практика 4) — 3 балла¶<br>
+Цель. Увидеть форму распределения, выброс, связь признаков с sla_breached. Таблица среднее не покажет: одинаковое среднее бывает при разной форме гистограммы.<br>
+<br>
+Подписывайте оси и заголовок (plt.title(&quot;Рис. N. ...&quot;)).</section><section class="markdown">Пример¶</section><section class="code"><pre><code>fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+df_raw[&quot;sla_breached&quot;].value_counts().sort_index().plot(
+    kind=&quot;bar&quot;, ax=axes[0], color=[&quot;#4C9F70&quot;, &quot;#D9534F&quot;]
+)
+axes[0].set_title(&quot;Рис. 1. Баланс классов: нарушение SLA&quot;)
+axes[0].set_xticklabels([&quot;уложились&quot;, &quot;сорвали&quot;], rotation=0)
+axes[0].set_ylabel(&quot;Число тикетов&quot;)
+
+sns.histplot(df_raw[&quot;cpu_pct&quot;].dropna(), bins=30, ax=axes[1], color=&quot;steelblue&quot;)
+axes[1].set_title(&quot;Рис. 2. Распределение загрузки CPU&quot;)
+plt.tight_layout()
+plt.show()
+</code></pre></section><section class="code"><pre><code>plt.figure(figsize=(8, 4))
+sns.boxplot(data=df_raw, x=&quot;priority&quot;, y=&quot;resolve_hours&quot;,
+            order=[&quot;Low&quot;, &quot;Medium&quot;, &quot;High&quot;, &quot;Critical&quot;])
+plt.title(&quot;Рис. 3. Время решения по приоритету&quot;)
+plt.ylabel(&quot;часы&quot;)
+plt.show()
+</code></pre></section><section class="markdown">Задание 4¶<br>
+Постройте не меньше четырёх разных типов графиков по своим данным. Обязательно:<br>
+<br>
+<br>
+Гистограмма resolve_hours (видно ли выбросы справа?).<br>
+<br>
+Boxplot cpu_pct в разрезе sla_breached.<br>
+<br>
+Тепловая карта корреляций числовых столбцов (corr(numeric_only=True) + sns.heatmap(..., annot=True)).<br>
+<br>
+Столбчатая или круговая диаграмма: доля нарушений SLA по department или по product.<br>
+<br>
+По желанию пятый график (scatter cpu_pct vs memory_mb, stacked bar канала и SLA и т. п.).<br>
+<br>
+<br>
+После графиков напишите 2–3 вывода по вашему SEED, не общие фразы из учебника.</section><section class="code"><pre><code># ▼▼▼ ВАШ КОД (Задание 4) ▼▼▼
+
+plt.figure(figsize=(8, 4))
+plt.hist(df_raw[&quot;resolve_hours&quot;].dropna(), bins=100, color=&quot;skyblue&quot;, edgecolor=&quot;black&quot;)
+plt.xlabel(&quot;Время решения, часы&quot;)
+plt.ylabel(&quot;Количество тикетов&quot;)
+plt.title(&quot;Рис. 1. Распределение времени решения тикетов&quot;)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+</code></pre></section><section class="code"><pre><code># График 2: boxplot cpu_pct в разрезе sla_breached
+groups = [df_raw.loc[df_raw[&quot;sla_breached&quot;] == v, &quot;cpu_pct&quot;].dropna() for v in [0, 1]]
+
+plt.figure(figsize=(6, 4))
+plt.boxplot(groups)
+plt.xticks([1, 2], [&quot;уложились (0)&quot;, &quot;нарушение (1)&quot;])
+plt.ylabel(&quot;Загрузка CPU, %&quot;)
+plt.title(&quot;Рис. 2. Загрузка CPU при нарушении SLA и без него&quot;)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+</code></pre></section><section class="code"><pre><code># График 3: тепловая карта корреляций
+numeric_df = df_raw.select_dtypes(include=&quot;number&quot;)
+correlation_matrix = numeric_df.corr(numeric_only=True)
+
+plt.figure(figsize=(7, 5))
+sns.heatmap(correlation_matrix, annot=True, fmt=&quot;.2f&quot;, cmap=&quot;coolwarm&quot;, center=0)
+plt.title(&quot;Рис. 3. Корреляции числовых признаков&quot;)
+plt.tight_layout()
+plt.show()
+</code></pre></section><section class="code"><pre><code># График 4: доля нарушений SLA по отделам
+tmp = df_raw.copy()
+tmp[&quot;department&quot;] = tmp[&quot;department&quot;].astype(str).str.strip().str.title()
+tmp[&quot;department&quot;] = tmp[&quot;department&quot;].replace({&quot;Devops&quot;: &quot;DevOps&quot;})
+share = tmp.groupby(&quot;department&quot;)[&quot;sla_breached&quot;].mean().sort_values(ascending=False)
+
+plt.figure(figsize=(8, 4))
+plt.bar(share.index, share.values, color=&quot;skyblue&quot;, edgecolor=&quot;black&quot;)
+plt.xlabel(&quot;Отдел&quot;)
+plt.ylabel(&quot;Доля нарушений&quot;)
+plt.title(&quot;Рис. 4. Доля нарушений SLA по отделам&quot;)
+plt.grid(True, alpha=0.3, axis=&quot;y&quot;)
+plt.tight_layout()
+plt.show()
+</code></pre></section><section class="code"><pre><code># График 5 (по желанию): круговая диаграмма распределения нарушений по отделам
+breaches_by_dept = tmp[tmp[&quot;sla_breached&quot;] == 1][&quot;department&quot;].value_counts()
+
+plt.figure(figsize=(6, 6))
+plt.pie(breaches_by_dept, labels=breaches_by_dept.index,
+        autopct=&quot;%1.1f%%&quot;, startangle=140)
+plt.title(&quot;Рис. 5. Распределение нарушенных тикетов по отделам&quot;)
+plt.axis(&quot;equal&quot;)
+plt.show()
+# ▲▲▲ КОНЕЦ ВАШЕГО КОДА ▲▲▲
+</code></pre></section><section class="markdown">Выводы по графикам<br>
+<br>
+1. По тепловой карте (рис. 3) числовые признаки в основном имеют слабую линейную связь; наибольшая отмеченная корреляция около 0,12. Это говорит лишь о слабой линейной зависимости в этих данных и не доказывает отсутствие других связей или причинность.<br>
+<br>
+2. На boxplot (рис. 2) медианная загрузка CPU у тикетов с нарушением SLA выше: 49,7% против 45,6% у тикетов без нарушения. Разница умеренная, поэтому CPU сам по себе не объясняет срыв SLA.<br>
+<br>
+3. Время решения сильно скошено вправо: медиана — 4,59 часа, а 33 тикета решались дольше 24 часов; максимальное значение — 129,5 часа. В группе тикетов дольше 24 часов доля нарушений SLA составляет 60,6%, в остальных — 42,6%. На графике по отделам (рис. 4) самая высокая доля нарушений у Security (49,0%), самая низкая — у DevOps (37,6%). Это описательные различия, не доказательство того, что отдел или время решения являются причиной нарушения.<br>
+</section><section class="markdown">Контрольные вопросы к этапу 4:<br>
+<br>
+<br>
+Что показывает boxplot и как по нему увидеть выброс?<br>
+<br>
+Корреляция и причинно-следственная связь — в чём разница? Пример из IT-журнала.<br>
+<br>
+Почему при редких нарушениях SLA одной accuracy на будущей модели может не хватить?</section><section class="markdown">Ответы:<br>
+<br>
+<br>
+<br>
+Boxplot показывает медиану, квартили и усы. Медиана - это центральные 50 % данных, усы до 1,5 × IQR от ящика, а выбросы это точки за усами. У меня медиана 4,59 ч, усы до 15–16 ч, а точки на 60 и 129,5 ч это и есть выбросы.<br>
+<br>
+<br>
+<br>
+Корреляция показывает, что величины меняются вместе, но не объясняет почему. Причинная связь - это когда одно реально вызывает другое. У меня cpu_pct и sla_breached коррелируют (r = 0,12), но это не значит, что процессор вызывает нарушение SLA. Скорее всего у них общая причина например авария. Чтобы доказать причину, нужен эксперимент, а не просто матрица корреляций.<br>
+<br>
+<br>
+<br>
+Метрика Accuracy не работает, если нарушения случаются редко,например модель может просто всегда выдавать «ноль»: общая точность будет высокой, но при этом мы пропустим все ошибки</section><section class="markdown">Этап 5. Подготовка данных и признаки (практика 5)¶<br>
+Цель. Убрать дубликаты, закрыть пропуски, привести текст к одному виду, закодировать категории, масштабировать числа, собрать несколько новых признаков. Это тот же конвейер, что на практике 5, только на вашем журнале тикетов.<br>
+<br>
+Работайте с копией: исходный df_raw не затирайте.</section><section class="markdown">Пример¶</section><section class="code"><pre><code>df = df_raw.copy()
+before = df.shape[0]
+df = df.drop_duplicates().reset_index(drop=True)
+print(&quot;Удалено дубликатов:&quot;, before - df.shape[0])
+print(&quot;Пропуски по столбцам:&quot;)
+print(df.isna().sum())
+
+median_cpu = df[&quot;cpu_pct&quot;].median()
+df[&quot;cpu_pct&quot;] = df[&quot;cpu_pct&quot;].fillna(median_cpu)
+print(&quot;Пропусков в cpu_pct после заполнения:&quot;, int(df[&quot;cpu_pct&quot;].isna().sum()))
+</code></pre></section><section class="code"><pre><code># Текст: пробелы и регистр. Без этого Backend и BACKEND — разные категории.
+demo = df[&quot;department&quot;].astype(str).str.strip().str.title()
+print(&quot;Уникальные отделы до:&quot;, df[&quot;department&quot;].nunique())
+print(&quot;После strip+title:&quot;, demo.nunique())
+print(sorted(demo.unique()))
+</code></pre></section><section class="markdown">Задание 5¶<br>
+Начните заново с копии df_raw. Сохраните результат в df_clean, матрицу признаков в X, цель в y.<br>
+<br>
+<br>
+Удалите дубликаты.<br>
+<br>
+Заполните пропуски: resolve_hours и cpu_pct — медианой, comments — медианой или нулём. Проверьте, что пропусков не осталось.<br>
+<br>
+Приведите department и product к одному виду: .str.strip() и единый регистр (например .str.title()). Снова посчитайте число уникальных значений.<br>
+<br>
+Закодируйте категории department, product, priority, channel, assignee_level, client_tier через pd.get_dummies(...).<br>
+<br>
+Создайте не меньше трёх осмысленных признаков, например:<br>
+<br>
+<br>
+<br>
+is_critical — флаг приоритета Critical;<br>
+<br>
+load_score — cpu_pct * memory_mb / 1000;<br>
+<br>
+reopen_rate — n_reopens / comments (защититесь от деления на ноль);<br>
+<br>
+свой признак (выходной ли день из opened_ts, «долгий тикет» и т. п.).<br>
+<br>
+<br>
+<br>
+Отберите числовые столбцы (без ticket_id и opened_ts) и масштабируйте их StandardScaler. Сложите с dummy-признаками в df_clean.<br>
+<br>
+Соберите X (всё, кроме sla_breached и идентификаторов) и y = df_clean[&quot;sla_breached&quot;]. Напечатайте формы.</section><section class="code"><pre><code># ▼▼▼ ВАШ КОД (Задание 5) ▼▼▼
+df = df_raw.copy()
+
+before = df.shape[0]
+df = df.drop_duplicates().reset_index(drop=True)
+print(&quot;Удалено дубликатов:&quot;, before - df.shape[0])
+
+df = df.drop(columns=[&quot;is_slow&quot;])
+
+for col in [&quot;resolve_hours&quot;, &quot;cpu_pct&quot;, &quot;comments&quot;]:
+    df[col] = df[col].fillna(df[col].median())
+print(&quot;Пропусков осталось:&quot;, int(df.isna().sum().sum()))
+print(&quot;Строк после удаления дубликатов:&quot;, df.shape[0])
+</code></pre></section><section class="code"><pre><code># 3. Текст department и product
+for col in [&quot;department&quot;, &quot;product&quot;]:
+    df[col] = df[col].str.strip().str.title()
+
+print(&quot;Уникальных отделов:&quot;, df[&quot;department&quot;].nunique(), &quot;|&quot;, sorted(df[&quot;department&quot;].unique()))
+print(&quot;Уникальных продуктов:&quot;, df[&quot;product&quot;].nunique(), &quot;|&quot;, sorted(df[&quot;product&quot;].unique()))
+</code></pre></section><section class="code"><pre><code># 4. get_dummies: одна категория → один бинарный столбец
+cat_cols = [&quot;department&quot;, &quot;product&quot;, &quot;priority&quot;, &quot;channel&quot;, &quot;assignee_level&quot;, &quot;client_tier&quot;]
+dummies = pd.get_dummies(df[cat_cols], prefix=cat_cols, dtype=int)
+
+print(&quot;Dummy-столбцов:&quot;, dummies.shape[1])
+print(list(dummies.columns))
+</code></pre></section><section class="code"><pre><code># 5. Новые признаки (минимум 3, один — свой)
+df[&quot;is_critical&quot;] = (df[&quot;priority&quot;] == &quot;Critical&quot;).astype(int)
+df[&quot;load_score&quot;]  = df[&quot;cpu_pct&quot;] * df[&quot;memory_mb&quot;] / 1000
+df[&quot;reopen_rate&quot;] = df[&quot;reopen_count&quot;] / df[&quot;comments&quot;].clip(lower=1)
+df[&quot;is_weekend&quot;]  = (pd.to_datetime(df[&quot;opened_ts&quot;], unit=&quot;s&quot;).dt.dayofweek &gt;= 5).astype(int)
+
+print(df[[&quot;is_critical&quot;, &quot;load_score&quot;, &quot;reopen_rate&quot;, &quot;is_weekend&quot;]].describe().round(2))
+</code></pre></section><section class="code"><pre><code># 6–7. Масштаб, df_clean, X, y
+from sklearn.preprocessing import StandardScaler
+num_cols = [&quot;cpu_pct&quot;, &quot;memory_mb&quot;, &quot;reopen_count&quot;, &quot;comments&quot;, &quot;resolve_hours&quot;,
+            &quot;is_critical&quot;, &quot;load_score&quot;, &quot;reopen_rate&quot;, &quot;is_weekend&quot;]
+
+scaler = StandardScaler()
+df[num_cols] = scaler.fit_transform(df[num_cols])
+
+df_clean = pd.concat([df.drop(columns=cat_cols), dummies], axis=1)
+
+y = df_clean[&quot;sla_breached&quot;]
+
+
+X = df_clean.drop(columns=[&quot;sla_breached&quot;, &quot;ticket_id&quot;, &quot;opened_ts&quot;, &quot;resolve_hours&quot;])
+
+print(&quot;Размер df_clean:&quot;, df_clean.shape)
+print(&quot;Размер X:&quot;, X.shape, &quot;| Размер y:&quot;, y.shape)
+print(&quot;Пропусков в df_clean:&quot;, int(df_clean.isna().sum().sum()))
+# ▲▲▲ КОНЕЦ ВАШЕГО КОДА ▲▲▲
+</code></pre></section><section class="markdown">Контрольные вопросы к этапу 5:<br>
+<br>
+<br>
+Когда для пропусков берут медиану, а когда среднее?<br>
+<br>
+Что такое One-Hot (get_dummies) и почему отделы нельзя просто заменить числами 1, 2, 3…?<br>
+<br>
+Зачем масштабировать признаки перед линейными моделями и kNN и почему дереву это обычно не нужно?<br>
+<br>
+Почему ticket_id нельзя подавать в модель как обычный признак?</section><section class="markdown">Медиану если распределение скошено или есть выбросы так как она устойчива, тогда как среднее тянется хвостом. Среднее уместно для симметричных данных без выбросов, когда нужен именно средний уровень.<br>
+<br>
+<br>
+<br>
+One-Hot для каждой категории создаёт отдельный столбец. Например, если есть категория department=Security, появится столбец department_Security, где будет стоять 1, а в остальных столбцах для этой категории 0. Если же просто присвоить категориям числовые значения, получится ложный порядок и неверные расстояния между ними. Например, это будет означать, что категория Security в четыре раза больше Support или находится ровно посередине между двумя другими. Линейная модель может начать искать несуществующие закономерности, а дерево решений  строить разделения, которых на самом деле нет в данных.<br>
+<br>
+<br>
+<br>
+Линейные модели чувствительны к масштабу признаков. Например, memory_mb измеряется тысячами, а cpu_pct — десятками. Если не привести их к одному масштабу, признак с большими значениями будет иметь больший вес. Это замедлит работу алгоритмов, основанных на градиентном спуске, и в случае kNN приведёт к тому, что один признак будет затмить остальные при расчёте расстояний. StandardScaler решает эту проблему, приводя все столбцы к среднему значению 0 и стандартному отклонению 1. Для деревьев решений масштабирование не требуется, так как они выбирают порог для каждого признака отдельно.<br>
+<br>
+<br>
+<br>
+ticket_id - это идентификатор, а не свойство модель может заучить номер 11598 это нарушение, и на новых данных такое предсказание станет случайным особенно легко это делают деревья.</section><section class="markdown">Итоговый отчёт студента¶<br>
+Заполните по вашему варианту. Это обязательная часть (без отчёта работа не принимается).</section><section class="markdown">Данные варианта¶<br>
+<br>
+<br>
+<br>
+Поле<br>
+Значение<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+ФИО<br>
+Крайников Ярослав<br>
+<br>
+<br>
+<br>
+Номер по списку<br>
+14<br>
+<br>
+<br>
+<br>
+Персональный SEED<br>
+24958<br>
+<br>
+<br>
+<br>
+Строк в df_raw<br>
+1845<br>
+<br>
+<br>
+<br>
+Строк после удаления дубликатов<br>
+1800 (удалено 45 полных копий)<br>
+<br>
+<br>
+<br>
+Доля sla_breached<br>
+42,9 %<br>
+<br>
+<br>
+<br>
+Размер X (строки × столбцы)<br>
+1800 × 32<br>
+<br>
+<br>
+<br>
+<br>
+Кратко по этапам¶<br>
+<br>
+Что необычного увидели при осмотре. Пропуски в трёх столбцах (после удаления дубликатов: resolve_hours — 108, cpu_pct — 72, comments — 54); 45 полных дубликатов; замаскированные выбросы (время решения ×9 — до 129,5 ч, память ×7 — до 23 282 МБ); разный регистр и пробелы у department и product — по 10 «категорий» вместо 5 у каждого; строк с хотя бы одним пропуском — 12,4 %.<br>
+<br>
+Кто чаще ломает SLA. По приоритету — Critical (73,3 %); по отделам — Security (49,0 %); по продуктам (после нормализации текста) — CRM (45,4 %); по уровню исполнителя — Junior (47,8 %). Разница по каналам (41–45 %) в пределах шума.<br>
+<br>
+Три новых признака и зачем. is_critical — флаг критического приоритета (самый сильный фактор: 73,3 % против 42,9 % в среднем); load_score = cpu_pct × memory_mb / 1000 — сводная «тяжесть» узла в момент обращения; reopen_rate = reopen_count / comments.clip(lower=1) — «конфликтность» тикета (защита от деления на ноль). Четвёртым, своим, сделал is_weekend — выходной ли день открытия (на выходных дежурная смена меньше).</section><section class="markdown">Финальная самопроверка¶<br>
+Ячейка ниже не ставит оценку, а подсказывает, какие переменные ещё не созданы.</section><section class="code"><pre><code>problems = []
+
+if &quot;SEED&quot; not in dir():
+    problems.append(&quot;Не вычислен SEED (шаг 0).&quot;)
+if &quot;df_raw&quot; not in dir():
+    problems.append(&quot;Не создан df_raw (генерация датасета).&quot;)
+if &quot;df_clean&quot; not in dir() or df_clean is None:
+    problems.append(&quot;Не создан df_clean (этап 5).&quot;)
+if &quot;X&quot; not in dir() or X is None:
+    problems.append(&quot;Не создана матрица X (этап 5).&quot;)
+if &quot;y&quot; not in dir() or y is None:
+    problems.append(&quot;Не создан вектор y (этап 5).&quot;)
+if &quot;df_clean&quot; in dir() and df_clean is not None:
+    n_na = int(df_clean.isna().sum().sum())
+    if n_na &gt; 0:
+        problems.append(f&quot;В df_clean ещё есть пропуски: {n_na}.&quot;)
+
+if problems:
+    print(&quot;Ещё не готово:&quot;)
+    for item in problems:
+        print(&quot; -&quot;, item)
+else:
+    print(&quot;Базовые переменные на месте. Проверьте текстовые ответы и отчёт.&quot;)
+    print(&quot;SEED:&quot;, SEED, &quot;| X:&quot;, X.shape, &quot;| y:&quot;, y.shape)
+</code></pre></section><section class="markdown">Как сдать работу¶<br>
+<br>
+Запустите все ячейки сверху вниз без ошибок (Среда выполнения → Перезапустить и выполнить всё).<br>
+<br>
+Заполните код заданий, контрольные вопросы и итоговый отчёт.<br>
+<br>
+Сохраните файл: Файл → Скачать → Скачать .ipynb.<br>
+<br>
+Переименуйте в Фамилия_Имя_ПР6.ipynb и загрузите в Moodle.<br>
+<br>
+<br>
+Повторно напомню шкалу: 5 блоков × 3 балла = 15 баллов. Пустой шаблон без запуска не оценивается.</section></body></html>
